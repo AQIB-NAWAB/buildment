@@ -1,58 +1,49 @@
-"use client";
-
-import { useTransition } from "react";
-import { Terminal, Save } from "lucide-react";
+import Link from "next/link";
+import { Terminal, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { setSectionStatus } from "@/app/(app)/courses/actions";
 
 type Props = {
+  courseId: string;
   sectionId: string;
   instructions: string;
   completed: boolean;
 };
 
 /**
- * Phase 3 (WebContainers + Monaco + Xterm + PGlite) mounts here.
- * This is a functional placeholder that persists a code snapshot to Progress
- * via the same "Save & Verify" action the full Workbench will use.
+ * Launches the Phase 3 in-browser Workbench (WebContainer + Monaco + Xterm +
+ * PGlite). The "Save & Verify" action that persists a code snapshot to
+ * Progress lives inside the Workbench itself.
  */
-export function BuildSection({ sectionId, instructions, completed }: Props) {
-  const [isPending, startTransition] = useTransition();
-
-  function saveAndVerify() {
-    startTransition(async () => {
-      await setSectionStatus(
-        sectionId,
-        true,
-        "// snapshot placeholder — WebContainer workbench arrives in Phase 3"
-      );
-    });
-  }
-
+export function BuildSection({
+  courseId,
+  sectionId,
+  instructions,
+  completed,
+}: Props) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">{instructions}</p>
-      <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
-        <div className="flex items-center gap-2 border-b border-slate-700 px-4 py-2 text-xs text-slate-400">
-          <Terminal className="h-3.5 w-3.5" />
-          workbench (WebContainer) — coming in Phase 3
+      <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-900 text-white">
+          <Terminal className="h-5 w-5" />
         </div>
-        <pre className="overflow-x-auto p-4 text-sm text-slate-300">
-          <code>{`$ npm run dev
-> vite
-
-  VITE ready in 312 ms
-  ➜  Local:   http://localhost:5173/`}</code>
-        </pre>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-slate-900">In-browser Workbench</p>
+          <p className="text-xs text-slate-500">
+            Edit code, run a Node server, and query Postgres — all in your browser.
+          </p>
+        </div>
+        {completed && (
+          <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+            <CheckCircle2 className="h-3 w-3" /> Verified
+          </span>
+        )}
+        <Button asChild size="sm">
+          <Link href={`/courses/${courseId}/build/${sectionId}`}>
+            Open Workbench <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
       </div>
-      <Button onClick={saveAndVerify} disabled={completed || isPending} size="sm">
-        <Save className="h-4 w-4" />
-        {completed
-          ? "Saved & verified"
-          : isPending
-            ? "Saving…"
-            : "Save & Verify"}
-      </Button>
     </div>
   );
 }

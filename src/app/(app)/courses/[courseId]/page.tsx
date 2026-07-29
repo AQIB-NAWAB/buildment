@@ -155,7 +155,7 @@ export default async function CoursePage({
                     </span>
                   </CardHeader>
                   <CardContent>
-                    {renderSection(section, isDone)}
+                    {renderSection(section, isDone, courseId)}
                   </CardContent>
                 </Card>
               );
@@ -174,7 +174,7 @@ type SectionRow = {
   contentMd: string;
 };
 
-function renderSection(section: SectionRow, isDone: boolean) {
+function renderSection(section: SectionRow, isDone: boolean, courseId: string) {
   switch (section.type) {
     case "LEARN":
       return <LearnSection content={section.contentMd} />;
@@ -198,6 +198,7 @@ function renderSection(section: SectionRow, isDone: boolean) {
     case "BUILD":
       return (
         <BuildSection
+          courseId={courseId}
           sectionId={section.id}
           instructions={section.contentMd}
           completed={isDone}
