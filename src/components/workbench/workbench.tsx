@@ -176,9 +176,9 @@ export function Workbench({
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-slate-900">{title}</h1>
           <p className="truncate text-xs text-slate-500">{instructions}</p>
@@ -204,23 +204,25 @@ export function Workbench({
 
       {/* Editor + Preview */}
       <div className="grid min-h-0 flex-1 grid-cols-2">
-        <div className="min-h-0 border-r border-slate-200">
-          <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
+        <div className="flex min-h-0 flex-col border-r border-slate-200">
+          <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
             server.js
           </div>
-          <Editor
-            height="100%"
-            defaultLanguage="javascript"
-            theme="vs-dark"
-            value={code}
-            onChange={(v) => setCode(v ?? "")}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-            }}
-          />
+          <div className="min-h-0 flex-1">
+            <Editor
+              height="100%"
+              defaultLanguage="javascript"
+              theme="vs-dark"
+              value={code}
+              onChange={(v) => setCode(v ?? "")}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+              }}
+            />
+          </div>
         </div>
         <div className="flex min-h-0 flex-col bg-white">
           <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
@@ -255,7 +257,7 @@ export function Workbench({
       </div>
 
       {/* Bottom panel: terminal / database */}
-      <div className="flex h-72 flex-col border-t border-slate-200">
+      <div className="flex h-72 shrink-0 flex-col border-t border-slate-200">
         <div className="flex h-10 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-100 px-2">
           <TabButton
             active={bottomTab === "terminal"}
