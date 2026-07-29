@@ -255,22 +255,22 @@ export function Workbench({
       </div>
 
       {/* Bottom panel: terminal / database */}
-      <div className="h-64 border-t border-slate-200">
-        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-100 px-2">
+      <div className="flex h-72 flex-col border-t border-slate-200">
+        <div className="flex h-10 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-100 px-2">
           <TabButton
             active={bottomTab === "terminal"}
             onClick={() => setBottomTab("terminal")}
-            icon={<TerminalSquare className="h-3.5 w-3.5" />}
+            icon={<TerminalSquare className="h-4 w-4" />}
             label="Terminal"
           />
           <TabButton
             active={bottomTab === "database"}
             onClick={() => setBottomTab("database")}
-            icon={<Database className="h-3.5 w-3.5" />}
+            icon={<Database className="h-4 w-4" />}
             label="Database"
           />
         </div>
-        <div className="h-[calc(16rem-2.25rem)]">
+        <div className="min-h-0 flex-1">
           <div className={cn("h-full", bottomTab === "terminal" ? "block" : "hidden")}>
             <div ref={termElRef} className="h-full w-full bg-[#0b1020] p-2" />
           </div>
@@ -327,10 +327,10 @@ function TabButton({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium",
+        "flex h-full items-center gap-1.5 border-b-2 px-4 text-sm font-medium",
         active
-          ? "border-indigo-600 text-indigo-700"
-          : "border-transparent text-slate-500 hover:text-slate-700"
+          ? "border-indigo-600 bg-white text-indigo-700"
+          : "border-transparent text-slate-600 hover:bg-slate-200/60 hover:text-slate-800"
       )}
     >
       {icon}
