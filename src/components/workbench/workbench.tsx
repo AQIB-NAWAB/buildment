@@ -41,6 +41,7 @@ export function Workbench({
   const [status, setStatus] = useState<Status>("booting");
   const [statusText, setStatusText] = useState("Booting WebContainer…");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("terminal");
   const [saved, setSaved] = useState(alreadyCompleted);
   const [isSaving, startSaving] = useTransition();
@@ -97,6 +98,12 @@ export function Workbench({
           import("@xterm/addon-fit"),
         ]);
 
+        if (typeof window !== "undefined" && !window.crossOriginIsolated) {
+          throw new Error(
+            "This page is not cross-origin isolated, so SharedArrayBuffer is unavailable. Check the COOP/COEP headers."
+          );
+        }
+
         const term = new xtermMod.Terminal({
           convertEol: true,
           fontSize: 12,
@@ -112,7 +119,14 @@ export function Workbench({
         termRef.current = term;
         window.addEventListener("resize", () => fit.fit());
 
-        const wc = await getWebContainer();
+        term.write(
+          "\x1b[90mBooting WebContainer runtime (hosted by StackBlitz)…\x1b[0m\r\n"
+        );
+        const wc = await withTimeout(
+          getWebContainer(),
+          45000,
+          "WebContainer runtime did not initialize within 45s. This usually means the StackBlitz-hosted runtime could not be reached from this browser/network."
+        );
         if (disposed) return;
         wcRef.current = wc;
 
@@ -132,8 +146,12 @@ export function Workbench({
         await startServer();
       } catch (e) {
         if (disposed) return;
+        const message =
+          e instanceof Error ? e.message : "Failed to boot sandbox";
         setStatus("error");
-        setStatusText(e instanceof Error ? e.message : "Failed to boot sandbox");
+        setStatusText("Sandbox unavailable");
+        setBootError(message);
+        termRef.current?.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`);
       }
     })();
 
@@ -215,9 +233,21 @@ export function Workbench({
                 src={previewUrl}
                 className="h-full w-full border-0 bg-white"
               />
+            ) : status === "error" ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                <p className="text-sm font-medium text-red-600">
+                  Live runtime unavailable
+                </p>
+                <p className="max-w-sm text-xs text-slate-500">{bootError}</p>
+                <p className="max-w-sm text-xs text-slate-400">
+                  The editor and the in-browser Postgres (Database tab) still
+                  work — the Node runtime/preview needs the StackBlitz-hosted
+                  WebContainer service, which this environment can&apos;t reach.
+                </p>
+              </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-slate-400">
-                {status === "error" ? "Sandbox failed to start" : "Waiting for server…"}
+                Waiting for server…
               </div>
             )}
           </div>
@@ -251,6 +281,15 @@ export function Workbench({
       </div>
     </div>
   );
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(message)), ms)
+    ),
+  ]);
 }
 
 function StatusPill({ status, text }: { status: Status; text: string }) {

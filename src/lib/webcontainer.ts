@@ -7,7 +7,7 @@ let bootPromise: Promise<WebContainerType> | null = null;
 export async function getWebContainer(): Promise<WebContainerType> {
   if (!bootPromise) {
     const { WebContainer } = await import("@webcontainer/api");
-    bootPromise = WebContainer.boot({ coep: "credentialless" });
+    bootPromise = WebContainer.boot({ coep: "require-corp" });
   }
   return bootPromise;
 }
