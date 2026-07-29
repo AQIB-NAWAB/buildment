@@ -1,0 +1,140 @@
+// BuildMint platform-state database schema.
+// See the master spec (README) for the domain model.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum SectionType {
+  LEARN
+  QUIZ
+  BUILD
+  CHECKLIST
+}
+
+enum ProgressStatus {
+  PENDING
+  COMPLETED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         Role     @default(STUDENT)
+  githubUrl    String?
+  streakCount  Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  authoredCourses Course[]        @relation("CourseAuthor")
+  progress        Progress[]
+  auditFlags      AiAuditFlag[]
+  supportThreads  SupportThread[] @relation("ThreadStudent")
+  assignedThreads SupportThread[] @relation("ThreadTeacher")
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  authorId    String
+  title       String
+  description String?
+  repoUrl     String?
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  author   User      @relation("CourseAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  chapters Chapter[]
+}
+
+model Chapter {
+  id           String   @id @default(cuid())
+  courseId     String
+  actionTitle  String
+  orderIndex   Int
+  systemPrompt String?  @db.Text // hidden AI guard prompt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sections       Section[]
+  auditFlags     AiAuditFlag[]
+  supportThreads SupportThread[]
+
+  @@unique([courseId, orderIndex])
+}
+
+model Section {
+  id         String      @id @default(cuid())
+  chapterId  String
+  type       SectionType
+  title      String
+  contentMd  String      @db.Text
+  orderIndex Int
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  chapter  Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  progress Progress[]
+
+  @@unique([chapterId, orderIndex])
+}
+
+model Progress {
+  id        String         @id @default(cuid())
+  userId    String
+  sectionId String
+  status    ProgressStatus @default(PENDING)
+  savedCode String?        @db.Text
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sectionId])
+}
+
+model AiAuditFlag {
+  id             String   @id @default(cuid())
+  userId         String
+  chapterId      String
+  flagDetails    String   @db.Text
+  codeSnippet    String?  @db.Text
+  resolvedStatus Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+}
+
+model SupportThread {
+  id           String   @id @default(cuid())
+  userId       String
+  teacherId    String?
+  chapterId    String
+  questionTxt  String   @db.Text
+  codeSnapshot String?  @db.Text
+  answerTxt    String?  @db.Text
+  isResolved   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user    User    @relation("ThreadStudent", fields: [userId], references: [id], onDelete: Cascade)
+  teacher User?   @relation("ThreadTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+}
