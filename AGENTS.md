@@ -34,5 +34,19 @@ update script, so start/prepare them manually per below.
 - Auth is a lightweight custom implementation (signed JWT cookie via `jose` +
   `bcryptjs`), not NextAuth, chosen for compatibility with the bleeding-edge Next 16.
   `AUTH_SECRET` in `.env` signs sessions.
-- Later phases (WebContainers sandbox, AI audit via Inngest+LLM, Resend emails) are
-  stubbed and require external API keys (`OPENAI_API_KEY`, `INNGEST_*`, `RESEND_API_KEY`).
+- Later phases (AI audit via Inngest+LLM, Resend emails) are stubbed and require
+  external API keys (`OPENAI_API_KEY`, `INNGEST_*`, `RESEND_API_KEY`).
+
+### Phase 3 Workbench (WebContainer) gotchas — non-obvious
+- The workbench lives at `/(app)/courses/[courseId]/build/[sectionId]` and boots a
+  StackBlitz WebContainer. This requires the page to be **cross-origin isolated**;
+  `next.config.ts` sets COOP `same-origin` + COEP **`require-corp`**.
+  Do NOT switch COEP to `credentialless`: the StackBlitz-hosted runtime iframe needs a
+  credentialed context and silently hangs at "Booting WebContainer…" under
+  credentialless. `WebContainer.boot({ coep })` must match the header value.
+- `reactStrictMode` is set to `false` because WebContainer is a single-boot-per-tab
+  singleton; Strict Mode's dev double-mount orphans the boot effect.
+- WebContainer needs outbound network to `stackblitz.com` (hosted runtime). If egress
+  is blocked, the boot will time out after 45s and the UI shows a graceful error; the
+  Monaco editor and the in-browser Postgres (PGlite "Database" tab) still work offline.
+- Monaco loads from its CDN and works under COEP `require-corp` (CDN sends CORP).
