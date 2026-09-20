@@ -1,0 +1,565 @@
+---
+title: Student LMS completion plan
+status: living — written 2026-09-20 from a full code audit, not from stale phase checklists
+---
+
+# Student LMS completion plan
+
+**Reads:** this file is the “what to build next” map. Topic specs still live in
+[`03-blocks-registry.mdx`](03-blocks-registry.mdx), [`04-progress-and-gating.mdx`](04-progress-and-gating.mdx),
+[`05-review-queue.mdx`](05-review-queue.mdx), [`06-reports.mdx`](06-reports.mdx),
+[`09-security.mdx`](09-security.mdx), and [`10-deferred-v2.mdx`](10-deferred-v2.mdx).
+
+**Purpose:** turn buildment from “a working course reader with some graded blocks” into a product
+where a mentee can **enroll, study, practice, get feedback, resume, and finish** — honestly.
+
+The M0–M7 phase files still describe the original build order. Several of them still say
+“not started” even though the code exists. **Do not use those checkboxes as the source of truth.**
+This file is.
+
+---
+
+## 1. What “students can learn” means here
+
+buildment is not Moodle/Canvas. The bet is: **passive reading does not teach; forced interaction
+does.** A proper student LMS for this product is therefore:
+
+1. Get into the right course.
+2. See a curriculum and the next thing to do.
+3. Read a chapter that actually teaches.
+4. Practice inside the chapter (quiz, predict, code, written answer, required reading).
+5. Get immediate feedback on auto-graded work, and mentor feedback on human-graded work.
+6. Resume exactly where they left off, on any device they signed in on.
+7. Make honest progress (complete means the required work is done, not “I clicked Next”).
+8. Optionally be gated so they cannot skip the spine of the course.
+
+If those eight are true for the FreshMarket course, students can learn. Catalog, payments,
+certificates, live class, forums, and native apps are **not** part of this plan.
+
+---
+
+## 2. What already works (do not rebuild)
+
+Audited against the repo on 2026-09-20.
+
+| Area | Status |
+|---|---|
+| Auth (Google + magic link + local `/api/dev-login`) | Works |
+| Role shells `(learn)` vs `(teach)` | Works |
+| Centralized guards in `src/server/auth/guards.ts` | Works (enrollment + mentor-of-course) |
+| Invite links + email assign + publish-first gating | Works |
+| MDX chapter reader (TOC, sidebar, next/prev, reading bar) | Works, and is strong |
+| Course syllabus + Continue target | Works (no lock UI yet) |
+| Dashboard of enrolled courses + % | Works |
+| Quiz, Predict, Open question, Code exercise (JS) | Learner UI + server grade exist |
+| Open-question review queue + needs-revision restore | Mentor queue works; mentee sees feedback **on that block** after reload |
+| Learning log persisted on `ChapterProgress` | Works |
+| Course/chapter mentor reports + CSV + confusion flags + at-risk | Course report exists |
+| Sanitizer test for `correct` / `rubric` / `sampleAnswer` / `hiddenTests` | Works |
+| FreshMarket course (~24 modules, ~350 chapters) | Imported |
+
+This is a real product skeleton. The gaps below are why it is not yet a **reliable** place to
+learn.
+
+---
+
+## 3. How to read the rest of this file
+
+Every item has a priority:
+
+| Priority | Meaning | When we build it |
+|---|---|---|
+| **P0** | Broken or missing in a way that makes “I finished the course” a lie, or that loses student work | First. Before new block types. |
+| **P1** | Students cannot learn *well* without it (resume, assessments, feedback inbox) | Right after P0 |
+| **P2** | Mentor/teaching loop leftovers and polish that make the P0/P1 work trustworthy | After the student loop is honest |
+| **Later** | Explicitly out of this plan. Do not start unless the product goal changes. | See §8 |
+
+**Recommendation:** implement in four slices (L1–L4) at the bottom of this file. Do not start
+Test + MustRead + Pyodide + notifications in parallel with the progress bugs. The progress math
+is the foundation; new blocks sitting on broken completion will make the product worse.
+
+Invariants from [`AGENTS.md`](../AGENTS.md) that this plan must not break:
+
+- `Block.config` never reaches the client.
+- Quiz/Test grading is server-side only.
+- Gating is a 403 from the chapter loader, not a hidden link.
+- One block type = one `src/blocks/<type>/` folder + one registry entry.
+- `Response` is append-only for attempts (reviews may set status/score on the current attempt, as today).
+- Auth only through `server/auth/guards.ts`.
+- Reports read denormalized tables, never live `Response` aggregates.
+
+---
+
+## 4. P0 — the learning loop is not honest today
+
+These are not polish. They are why a mentee can “complete” the wrong things, skip the spine, or
+lose work.
+
+### 4.1 Chapter completion ignores `Block.required`
+
+**Today:** `recomputeChapterProgress` in `src/server/progress/compute.ts` loads **every**
+non-archived block in the chapter and counts a chapter complete only when *all* of them have a
+`Response`. It does not look at `Block.required`.
+
+**Why it matters:** import marks `CHAPTER_RECAP` and `PROJECT_PREVIEW` as `required: false`.
+Those blocks never submit a response. Any chapter that contains a recap or project preview
+**cannot complete**, so `%` on the dashboard and Continue never tell the truth, and sequential
+gating (once built) would deadlock.
+
+**Implement:**
+
+- Count only `required: true` blocks toward `blocksTotal` / `blocksCompleted`.
+- Presentational registry types (`STEPS`, `PROJECT_PREVIEW`, `LEARNING_OBJECTIVES`,
+  `CHAPTER_RECAP`) must never be required. Enforce in extract/import + a unit test.
+- Zero-required-block chapters complete via an explicit **Mark as read** control (spec in
+  [`04-progress-and-gating.mdx`](04-progress-and-gating.mdx)). That button does not exist.
+
+**Files:** `src/server/progress/compute.ts`, chapter reader footer, a new Vitest covering
+required vs optional vs zero-block.
+
+### 4.2 Any response counts as “done,” including drafts and failed blocking work
+
+**Today:** if a latest `Response` exists, the block is completed. `DRAFT` open-question rows
+(under min-words) count. A wrong quiz counts. There is no `blocking` check.
+
+**Why it matters:** the spec says quizzes complete on *answer* (correctness recorded, not
+blocking). That part is fine. Drafts must **not** complete. A future `<Test>` that is
+`blocking: true` must complete only when `isCorrect` / passing score is met.
+
+**Implement:**
+
+- A small per-type completion predicate next to the grader (not a scattered switch): e.g.
+  `completes(gradeResult, block) → boolean`.
+- `DRAFT` never completes.
+- `blocking` blocks complete only when the grade says they passed (quiz default `blocking: false`).
+- Keep open-question completion = submitted (`PENDING_REVIEW` / `REVIEWED` / `NEEDS_REVISION`),
+  not “mentor approved” — already the documented decision.
+
+### 4.3 Sequential gating is specified, schema’d, and not enforced
+
+**Today:**
+
+- `Course.sequential` defaults to `true` in Prisma and is never read.
+- There is no `src/server/progress/gate.ts`.
+- The chapter loader (`src/app/(learn)/courses/[courseSlug]/[chapterSlug]/page.tsx`) only checks
+  enrollment. Any enrolled mentee can open chapter 200 by URL.
+- The syllabus renders every chapter as a live link. No lock icon for locked lessons (the `Lock`
+  icon on the overview page is only the “you are not enrolled” empty state).
+
+**Why it matters:** this is invariant 3. Without it, the course is a wiki, not a path. FreshMarket
+is a 4-week build; skipping to checkout before auth lands is exactly what gating is for.
+
+**Implement:**
+
+- `src/server/progress/gate.ts`: given enrollment + chapter, return unlocked / locked-with-reason.
+- Chapter page + `POST /api/blocks/[blockId]/respond` both call it. Locked chapter → **403**.
+- Syllabus and sidebar: locked chapters visible but not navigable; show “Complete {previous} first”.
+- Course setting already exists (`sequential`); wire a mentor toggle on course edit if missing.
+- Test: request chapter 3’s route while chapter 2 is `NOT_STARTED` → 403. Not a UI-only test.
+
+### 4.4 Resume is broken for the blocks students actually click
+
+| Surface | Survives reload? | Bound to the account? |
+|---|---|---|
+| Open question + mentor feedback | Yes (server `Response`) | Yes |
+| Learning log | Yes (`ChapterProgress.learningLog`) | Yes |
+| Quiz | **No** — QuizClient starts empty | No |
+| Predict | **No** | No |
+| Code exercise | **No** — editor resets to starter | No |
+| Checklist | localStorage only | **No** (lost on new browser / phone) |
+| Mandatory read checkbox | localStorage only | **No** |
+
+**Why it matters:** a mentee who answers a quiz, closes the laptop, and opens the phone has
+“forgotten” the chapter. That is not an LMS.
+
+**Implement:**
+
+- Same pattern as `OpenQuestionComponent`: server component loads latest `Response`, passes
+  sanitized initial state into the client.
+- Quiz / Predict: restore selected options + last grade result (explanation is already returned
+  by the respond route; persist it only in `Response` / re-derive from server grade on load —
+  **do not** put `correctOptionId` in the client payload).
+- Code: restore `payload.source`; if last attempt passed, show the passed state + solution the
+  server already returns on pass.
+- Checklist + mandatory-read: stop using localStorage as source of truth. Either:
+  - promote Mandatory Read to a real `MUST_READ` block (preferred, see 5.2), and
+  - persist checklist ticks on `ChapterProgress` (JSON map, like the learning log), **or**
+  - keep checklists decorative and do **not** count them toward completion (current content
+    already treats them as a wrap-up UI).
+
+P0 is: quiz / predict / code restore. Checklist can wait for MustRead if we explicitly decide
+checklists are non-required UX.
+
+### 4.5 Progress UI does not update when you submit
+
+**Today:** answering a quiz writes a `Response` and recomputes rollups, but the chapter sidebar
+status, course `%`, and “Next” lock state are whatever was rendered on page load.
+
+**Implement:** after a successful respond, either router-refresh the server tree or return the
+new `ChapterProgress` and lift it into the reader shell. Students must see the lesson flip to
+complete without a manual reload.
+
+### 4.6 `POST /api/blocks/[blockId]/respond` special-cases types
+
+**Today:** the route has an if/else on `QUIZ` / `PREDICT` / `CODE` / else-open-question. It also
+re-implements enrollment instead of calling `requireEnrolledMentee`.
+
+**Why it matters:** adding Test and MustRead by extending that if/else violates “one registry
+entry.” It will also miss gating if we forget to add the gate check in a fifth branch.
+
+**Implement (do this as part of P0, not later):**
+
+- Parse payload with a per-type Zod schema from the registry (add `payloadSchema` to the
+  registry contract if needed).
+- `grade(config, payload)` from the registry only.
+- Extra fields in the JSON response (explanation, solution, failedTestName) come from a
+  registry-optional `clientResult(config, grade)` helper in the block folder — not from the
+  route.
+- Auth: `getSessionUser` + enrollment is fine if it goes through guards; do not invent a second
+  rule. Prefer a guard helper that returns `{ user, enrollment }` or 401/403 JSON for route
+  handlers (layouts use `redirect`; APIs must not).
+
+---
+
+## 5. P1 — features a student LMS actually needs
+
+Once completion and resume are honest, these are the missing student-facing capabilities.
+
+### 5.1 Student progress that answers “how am I doing?”
+
+**Today:** `/progress` is a list of courses with a percentage, chapter counts, and last-active
+date. Spec in [`06-reports.mdx`](06-reports.mdx) wants a **mentee report**: progress ring,
+current chapter, next action, per-chapter timeline with scores, all mentor feedback in one
+place, weak-area tags.
+
+**Implement:**
+
+- `src/server/reports/mentee.ts` reading **only** `Enrollment` + `ChapterProgress` +
+  denormalized review fields we already store (`Enrollment.pendingReviews`, `ChapterProgress.score`).
+  Mentor feedback “all in one place” needs `Review` rows for that user. That is a per-mentee
+  read, not a cohort aggregate — acceptable if it is scoped to one enrollment and not used as
+  the course report. If we want to stay strict on invariant 7, denormalize a
+  `ChapterProgress.latestFeedback` (or a small `FeedbackInbox` table written in the same
+  transaction as `submitReview`).
+- Mentee page **and** mentor “view this mentee” reuse the same projector.
+- Next action: “Continue chapter X” / “Revise open question in Y” / “Course complete”.
+
+**Do not** query all `Response` rows for the whole course on this page.
+
+### 5.2 `<MustRead>` as a real block (replace localStorage cards)
+
+**Today:** `MandatoryReadCard` is a presentational component. Checking it does nothing to
+progress. Spec: [`03-blocks-registry.mdx`](03-blocks-registry.mdx) §MustRead.
+
+**Why it matters:** FreshMarket has ~43 mandatory-read cards. They are a core pedagogy
+(“go read the Stripe docs”) that currently do not exist in the LMS sense.
+
+**Implement:** full registry folder `src/blocks/must-read/` (`schema`, `grade`, `Component`,
+`report`, `editorDescriptor`).
+
+- Config: `url`, `minSeconds`, `checkpoint?`, `requireNote?`.
+- Completion: checkbox after link opened (+ note if required). Honor system, labeled as such.
+- If `requireNote`, status `PENDING_REVIEW` and it joins the existing review queue.
+- Migrate `MandatoryReadCard` usages in content **or** keep the card as a visual and have the
+  import pipeline emit `MUST_READ` blocks. Prefer one system, not two checkboxes.
+
+`BlockType.MUST_READ` already exists in Prisma. Extract already maps `MustRead` → `MUST_READ`.
+
+### 5.3 `<Test>` as the blocking assessment
+
+**Today:** enum + extract mapping exist; no `src/blocks/test/` folder. Course content uses
+per-chapter quizzes and lots of open questions, not a week-gate exam.
+
+**Why it matters:** sequential chapter gating without a real blocking assessment is just “did
+you click every quiz.” A proper LMS needs one high-stakes check per module/week.
+
+**Implement:** full registry entry per M3 spec:
+
+- `questions[]`, `passingScore`, `timeLimitMinutes?`, `maxAttempts`, `shuffleQuestions`,
+  `showAnswersAfter`.
+- Server-side scoring only. Client timer is advisory; `Response.startedAt` is the source of
+  truth; late submit is scored honestly and flagged.
+- Default `blocking: true`.
+- Add 4 tests to FreshMarket (one per week) **after** the block works — content is a separate
+  change, not a blocker for the block itself.
+
+### 5.4 Feedback inbox and “needs revision” that the student cannot miss
+
+**Today:** feedback renders inside the open-question block after reload. There is no
+notification model, no dashboard badge, no email on review (M4 leftover), no list of
+“mentor asked you to revise.”
+
+**Implement (v1, small):**
+
+1. Dashboard + reader: “N items need revision” derived from latest `Response.status =
+   NEEDS_REVISION` for that user. This is a **targeted** query by `userId` + status, not a
+   report aggregate. Still prefer denormalizing `Enrollment.needsRevisionCount` in the same
+   transaction as review/submit if we want the dashboard to stay dumb.
+2. Email via existing Resend path when a review is submitted (M4 task, already specified).
+3. In-app bell can wait; a persistent banner on `/dashboard` and the chapter is enough.
+
+Do **not** build a general notifications product (that is in [`10-deferred-v2.mdx`](10-deferred-v2.mdx)).
+
+### 5.5 Open-question draft autosave
+
+**Today:** the client only POSTs on Submit. `gradeOpenQuestion` can write `DRAFT` if the
+payload is short, but the UI does not debounce-save. Spec: Markdown textarea, autosave draft,
+explicit submit.
+
+**Implement:** debounced POST of `{ text }` that creates a new attempt **or** — wait.
+
+**Invariant conflict:** Responses are append-only. Autosave every 2s must not create a new
+attempt row each time.
+
+**Decision to take in the same change:** keep **one DRAFT response per (blockId, userId)** as
+the only allowed in-place update, and treat that as *not* a “fix progress” mutation. Submit
+then inserts attempt N+1 as `PENDING_REVIEW`. Document this exception in
+[`11-decisions-and-open-questions.mdx`](11-decisions-and-open-questions.mdx). Do not silently
+update submitted attempts.
+
+### 5.6 Time tracking (heartbeat)
+
+**Today:** `ChapterProgress.timeSpentSeconds` exists. There is no
+`POST /api/progress/heartbeat`. Mentor reports cannot show median time or “this chapter takes
+forever.”
+
+**Implement:** as specified in [`04-progress-and-gating.mdx`](04-progress-and-gating.mdx):
+
+- Client: every 15s while the chapter tab is visible **and** focused.
+- Server: accumulate, cap per session so an overnight tab does not count.
+- Approximate by design. Not for billing.
+
+This is P1 because reports and at-risk mentoring are weaker without it, but students can still
+learn without a timer. Ship after gating/resume if we have to cut.
+
+### 5.7 Code practice — keep what the course uses; do not pretend M5 is done
+
+**Today (important divergence from 2026-08 architecture notes):**
+
+- `src/blocks/code/` is a **server-side** JS exercise (`complete` | `implement`) using
+  `node:vm` (`src/blocks/code/run-tests.ts`).
+- `docs/03-blocks-registry.mdx` was updated to match this (`<CodeExercise>`).
+- Pyodide and Sandpack are **not** in `package.json`.
+- There is no playground, no Python, no hidden client-side tests.
+- FreshMarket only needs ~13 JS drills of this shape.
+
+**What we can implement now (P1):**
+
+- Restore last source (4.4).
+- Label reports “server-run JS tests” honestly.
+- Harden `node:vm`: timeout already 3s; still **not a security boundary**. Do not expose this
+  to the public internet as a general code runner. Fine for known mentees in v1; document the
+  risk. A real isolate (separate process / Firecracker / E2B) stays v2.
+- Do **not** run `require`, filesystem, or network in the sandbox.
+
+**What we should not implement in this plan:** full Sandpack + Pyodide playground. That is a
+large M5-shaped project the current course does not use. Revisit when we have a Python course
+or a “run this Node app” lesson. Decision log already records Pyodide+Sandpack as the v1
+sandbox *intent*; CodeExercise is the v1 *actual*. Log that split in
+[`11-decisions-and-open-questions.mdx`](11-decisions-and-open-questions.mdx) when we next touch
+code.
+
+### 5.8 Rate limits on submit
+
+Specified in [`09-security.mdx`](09-security.mdx). Not implemented. Cheap, needed before
+`<Test>` exists (otherwise MCQ brute force). Per user per block. Combine with `maxAttempts`.
+
+---
+
+## 6. P2 — make the teaching loop and the product trustworthy
+
+Not required for a single mentee to finish FreshMarket, required before we call v1 “done.”
+
+### 6.1 Mentor review leftovers (M4)
+
+| Item | Status |
+|---|---|
+| Queue + aging >48h + course filter | Done |
+| Threaded attempt history on detail | Done |
+| Score + Markdown feedback + verdict | Done |
+| Keyboard `j`/`k`, `⌘+Enter` | Missing |
+| Canned snippets per mentor | Missing |
+| Email on review complete | Missing (also student P1) |
+| Bulk approve | Deferred (v2) |
+
+### 6.2 Mentor reports leftovers (M6)
+
+| Item | Status |
+|---|---|
+| Course funnel, chapter curve, mentee table, at-risk, confusion flags | Done (inline in the page, not `server/reports/*.ts`) |
+| CSV of mentee table | Done |
+| Extract to `server/reports/{chapter,course,mentee}.ts` | Cleanup |
+| One-click nudge | Missing |
+| Failed-the-same-test-twice at-risk clause | Missing until `<Test>` exists |
+| Median time spent / drop-off | Missing until heartbeat exists |
+| Per-mentee PDF | Missing — skip unless a mentor asks |
+
+### 6.3 Authoring leftovers (M1/M7)
+
+| Item | Status |
+|---|---|
+| MDXEditor + autosave + publish | Exists |
+| Per-block **structured** editors | Stubs — generic JSX editors, not the registry descriptors the spec wants |
+| Drag-reorder chapters/modules | Up/down only (M7) |
+| Mid-course edit warning | Specified as done in M7 |
+
+Structured editors are nice for mentors; FreshMarket is imported from `content/`, so this is
+not on the student critical path.
+
+### 6.4 Assignment / polish leftovers (M7)
+
+- Empty states: some exist (dashboard, progress, review, admin). Audit every list.
+- Mobile pass on reader, review, reports. Reader already has collapse toggles; verify real
+  phones.
+- Playwright E2E of the full loop — **does not exist** (`e2e/` is empty, no Playwright
+  config). This is how we prove P0.
+- Confirm Sentry + PostHog actually receive events.
+
+### 6.5 Admin
+
+`/admin` is a placeholder. Thin v1: list users, promote to mentor. Not a student-learning
+blocker.
+
+### 6.6 Nightly `recomputeProgress` cron
+
+Specified, not built (no `vercel.json` cron, no `/api/cron` route). Repair path for drift after
+content edits. Build once P0 completion math is correct, otherwise the cron will freeze the
+wrong numbers.
+
+---
+
+## 7. Content vs platform
+
+The seeded course is **FreshMarket — Multi-Vendor Grocery Marketplace** (~24 modules, ~350
+MDX chapters). Interaction mix in transformed content (approx.):
+
+- Open questions: most chapters (the dominant checkpoint)
+- Code exercises: ~13
+- Quizzes: sparse (many `*.07-quiz.mdx` files are actually grouped open questions)
+- Predict: 1
+- Mandatory-read **cards**: ~43, not blocks
+- Tests: 0
+
+So even after the platform can do Test + MustRead, **the course will not use them until we
+author them.** Platform work and content work are separate slices:
+
+1. Platform can represent the feature.
+2. Import/transform emits it.
+3. A mentee hits it in FreshMarket.
+
+Do not block platform Test on rewriting week gates; do not ship MustRead and leave 43
+localStorage cards in the course.
+
+---
+
+## 8. Explicitly not in this plan (do not start)
+
+From [`00-product-overview.mdx`](00-product-overview.mdx) and
+[`10-deferred-v2.mdx`](10-deferred-v2.mdx), plus this audit:
+
+- Payments, public catalog, certificates, gamification, leaderboards
+- Live classes, calendar, scheduling
+- Video hosting (YouTube/Loom embeds already exist)
+- Native apps
+- Discussion forum / “ask the mentor” chat (review is the v1 human loop)
+- Cohorts, deadlines, drip release, email nudges beyond “your work was reviewed”
+- General notification product
+- Server-side tamper-proof multi-language runner (E2B / Firecracker / WebContainers license)
+- Pyodide + Sandpack playground (until a course needs it)
+- Git import/export of MDX bundles
+- Real project submissions (repo URL, deployed app, peer review)
+- Versioned course releases
+- Multi-mentor / TA roles (schema already allows `Review.reviewerId` ≠ `Course.mentorId`)
+- Auth.js → Better Auth migration
+- Dark mode as a project
+- Search inside a course
+- SCORM / xAPI / LTI
+- Student analytics product (mentor reports + mentee self-report are enough)
+
+If a task starts to look like one of these, stop.
+
+---
+
+## 9. Recommended build order
+
+Four slices. Each slice should be mergeable and demoable. Do not start L3 before L1 is true
+in production data (run `recomputeProgress` / backfill after the completion fix).
+
+### L1 — Honest progress (P0)
+
+**Demo:** a mentee finishes every required quiz/open question/code in a chapter; recap does
+**not** block them; the chapter marks complete; chapter 2 is 403 until then; reload keeps their
+quiz/code answers.
+
+1. Fix `recomputeChapterProgress` (required, draft, blocking predicate).
+2. Mark as read for zero-required-block chapters.
+3. `gate.ts` + 403 on chapter loader + respond route.
+4. Syllabus/sidebar lock UI.
+5. Restore quiz / predict / code state from latest Response.
+6. Registry-driven respond route (no type switch in the API).
+7. Refresh progress in the reader after submit.
+8. Unit tests for compute + gate; sanitizer still passes.
+9. Backfill script for existing `ChapterProgress` rows.
+
+**Out of L1:** Test, MustRead, heartbeat, Playwright (add a thin Vitest/HTTP test for 403).
+
+### L2 — Student LMS surfaces (P1)
+
+**Demo:** mentee opens My progress, sees next action and mentor comments; revises from a
+dashboard banner; MustRead ticks count; a draft open answer survives reload.
+
+1. Mentee report page (shared projector).
+2. Needs-revision badge + review-complete email.
+3. Open-question draft autosave with the documented DRAFT exception.
+4. `MUST_READ` registry + migrate MandatoryReadCard content.
+5. Submit rate limit.
+6. Heartbeat (can slip to L3 if needed).
+
+### L3 — Assessments that gate a week (P1)
+
+**Demo:** week-1 `<Test>` blocks week 2; maxAttempts and server timer behave; brute-force is
+rate-limited.
+
+1. `src/blocks/test/` full registry entry.
+2. Wire blocking completion through the L1 predicate.
+3. Author 4 FreshMarket week-gate tests (content change).
+4. At-risk rule: failed the same test twice.
+5. Playwright: enroll → read → quiz → test gate → open question → mentor review → resume.
+
+### L4 — Teaching polish (P2)
+
+Keyboard review, canned snippets, empty-state audit, mobile pass, drag-reorder, cron repair
+job, admin promote-user, Sentry/PostHog confirmation.
+
+Stop after L3 if the goal is “students can learn.” L4 is “mentors can run a cohort without
+cursing.”
+
+---
+
+## 10. Definition of done for “students can learn”
+
+A new mentee, using only the product (no SQL, no localStorage tricks):
+
+1. Accepts an invite and lands on the FreshMarket syllabus.
+2. Cannot open a later chapter by pasting the URL.
+3. Completes chapter 1’s required blocks; chapter 1 shows complete; recap did not trap them.
+4. Reloads (or another browser, signed in) and sees the same quiz/code/open answers.
+5. Submits an open question; mentor reviews; mentee is told on the dashboard and can resubmit.
+6. Hits a week-1 test (once authored) and is blocked from week 2 until they pass.
+7. Sees a progress page that names the next action, not just “12%.”
+
+When those seven are true, we have a proper LMS for this product. Everything else in §6 and §8
+can wait.
+
+---
+
+## 11. Suggested first implementation PR (after this plan)
+
+Do **not** mix content rewrites with L1. First code PR:
+
+- `src/server/progress/compute.ts` + tests
+- `src/server/progress/gate.ts` + chapter loader 403
+- Restore state on Quiz / Predict / Code
+- Registry-shaped respond route
+
+That PR is the difference between a reader and an LMS.
