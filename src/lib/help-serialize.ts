@@ -5,7 +5,7 @@ export type HelpMessageRow = {
   body: string;
   createdAt: Date;
   authorId: string;
-  author: { name: string | null; role: "MENTOR" | "MENTEE" | "ADMIN" };
+  author: { name: string | null; role: "MENTOR" | "MENTEE" | "PLATFORM_ADMIN" };
 };
 
 export function mapHelpMessages(

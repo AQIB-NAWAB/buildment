@@ -97,7 +97,15 @@ export default async function LoginPage({
                     }`}
                     className="text-sm text-primary underline-offset-4 hover:underline"
                   >
-                    {seedUser.role === "MENTOR" ? "Mentor" : "Mentee"} — {seedUser.email}
+                    <span className="font-medium">{seedUser.name}</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({seedUser.role === "PLATFORM_ADMIN"
+                        ? "Platform Admin"
+                        : seedUser.role === "MENTOR"
+                        ? "Mentor"
+                        : "Mentee"}) — {seedUser.email}
+                    </span>
                   </Link>
                 ))}
               </div>

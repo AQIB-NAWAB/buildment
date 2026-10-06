@@ -4,9 +4,9 @@ import { signOutAction } from "@/server/auth/actions";
 import { prisma } from "@/server/db";
 
 export default async function TeachLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const rows = await prisma.course.findMany({
-    where: user.role === "ADMIN" ? undefined : { mentorId: user.id },
+    where: user.role === "PLATFORM_ADMIN" ? undefined : { mentorId: user.id },
     orderBy: [{ updatedAt: "desc" }, { title: "asc" }],
     select: {
       id: true,

@@ -54,7 +54,11 @@ const VALUE_PROPS = [
 
 export default async function MarketingHomePage() {
   const courses = await prisma.course.findMany({
-    where: { status: "PUBLISHED" },
+    where: {
+      status: "PUBLISHED",
+      listingStatus: "APPROVED",
+      visibility: "PUBLIC_DIRECTORY",
+    },
     select: {
       id: true,
       slug: true,

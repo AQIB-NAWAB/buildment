@@ -7,7 +7,7 @@ import type { MentorCoursesView } from "./types";
 export async function loadMentorCourses(user: { id: string; role: string }): Promise<MentorCoursesView> {
   const now = Date.now();
   const rows = await prisma.course.findMany({
-    where: user.role === "ADMIN" ? undefined : { mentorId: user.id },
+    where: user.role === "PLATFORM_ADMIN" ? undefined : { mentorId: user.id },
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,

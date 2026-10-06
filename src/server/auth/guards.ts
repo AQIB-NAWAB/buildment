@@ -1,4 +1,5 @@
 import "server-only";
+import type { Role } from "@/generated/prisma/client";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { auth } from "./auth";
@@ -26,7 +27,7 @@ export async function requireUser() {
 }
 
 /** Redirects to that role's home if the signed-in user doesn't have one of `allowed`. */
-export async function requireRole(...allowed: readonly ["MENTOR" | "MENTEE" | "ADMIN", ...("MENTOR" | "MENTEE" | "ADMIN")[]]) {
+export async function requireRole(...allowed: readonly [Role, ...Role[]]) {
   const user = await requireUser();
   if (!canAccessRole(user.role, allowed)) {
     redirect(homeRouteForRole(user.role));
@@ -36,7 +37,7 @@ export async function requireRole(...allowed: readonly ["MENTOR" | "MENTEE" | "A
 
 /** Throws ForbiddenError (never silently no-ops) if the signed-in user doesn't mentor this course. */
 export async function requireMentorOfCourse(courseId: string) {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     select: { mentorId: true },

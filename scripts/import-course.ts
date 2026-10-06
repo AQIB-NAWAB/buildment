@@ -772,6 +772,10 @@ async function upsertCourse() {
       coverUrl: SEED_COURSE.coverUrl,
       status: "PUBLISHED",
       mentorId: mentor.id,
+      createdById: mentor.id,
+      organizationId: null,
+      listingStatus: "DRAFT",
+      visibility: "PRIVATE",
       publishedAt: new Date(),
     },
   });

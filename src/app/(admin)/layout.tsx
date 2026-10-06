@@ -4,7 +4,7 @@ import { NavBar } from "@/components/nav-bar";
 const LINKS = [{ href: "/admin", label: "Admin" }];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireRole("ADMIN");
+  const user = await requireRole("PLATFORM_ADMIN");
 
   return (
     <div className="flex flex-1 flex-col">

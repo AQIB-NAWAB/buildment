@@ -10,7 +10,7 @@ export async function countOpenHelpRequests(user: { id: string; role: Role }) {
   return prisma.helpThread.count({
     where: {
       status: "OPEN",
-      ...(user.role === "ADMIN" ? {} : { course: { mentorId: user.id } }),
+      ...(user.role === "PLATFORM_ADMIN" ? {} : { course: { mentorId: user.id } }),
     },
   });
 }

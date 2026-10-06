@@ -6,7 +6,21 @@ export const SEED_USERS = [
   { email: "mentee1@buildment.dev", name: "Ada Mentee", role: "MENTEE" as const },
   { email: "mentee2@buildment.dev", name: "Ben Mentee", role: "MENTEE" as const },
   { email: "mentee3@buildment.dev", name: "Cy Mentee", role: "MENTEE" as const },
+  { email: "platform-admin@buildment.dev", name: "Alex Admin", role: "PLATFORM_ADMIN" as const },
+  { email: "dw-admin@buildment.dev", name: "Dev Weekend Admin", role: "MENTOR" as const },
+  { email: "dw-mentor@buildment.dev", name: "Dev Weekend Mentor", role: "MENTOR" as const },
+  { email: "dw-mentee@buildment.dev", name: "Dev Weekend Mentee", role: "MENTEE" as const },
 ] as const;
+
+export const SEED_ORGANIZATION = {
+  name: "Dev Weekend",
+  slug: "dev-weekend",
+  members: [
+    { email: "dw-admin@buildment.dev", role: "ORG_ADMIN" as const },
+    { email: "dw-mentor@buildment.dev", role: "MENTOR" as const },
+    { email: "dw-mentee@buildment.dev", role: "MENTEE" as const },
+  ],
+} as const;
 
 const SEED_TEST_EMAILS: Set<string> = new Set(SEED_USERS.map((user) => user.email));
 

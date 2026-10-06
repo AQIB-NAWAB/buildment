@@ -19,12 +19,12 @@ export default async function MentorHelpInboxPage({
 }: {
   searchParams: Promise<{ courseId?: string; status?: string }>;
 }) {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const { courseId: courseFilter, status: statusFilter } = await searchParams;
   const openHelpCount = await countOpenHelpRequests(user);
 
   const courses = await prisma.course.findMany({
-    where: user.role === "ADMIN" ? undefined : { mentorId: user.id },
+    where: user.role === "PLATFORM_ADMIN" ? undefined : { mentorId: user.id },
     orderBy: { title: "asc" },
     select: { id: true, title: true },
   });

@@ -14,7 +14,10 @@ status: draft v1 — source of truth until prisma/schema.prisma exists
 ## Prisma schema
 
 ```prisma
-enum Role            { MENTEE MENTOR ADMIN }
+enum Role            { MENTEE MENTOR PLATFORM_ADMIN }
+enum OrganizationRole { ORG_ADMIN MENTOR MENTEE }
+enum ListingStatus   { DRAFT SUBMITTED APPROVED REJECTED }
+enum Visibility      { PRIVATE UNLISTED PUBLIC_DIRECTORY }
 enum CourseStatus    { DRAFT PUBLISHED ARCHIVED }
 enum EnrollStatus    { ASSIGNED IN_PROGRESS COMPLETED DROPPED }
 enum ProgressStatus  { NOT_STARTED IN_PROGRESS COMPLETED }
@@ -23,6 +26,30 @@ enum ResponseStatus  { DRAFT SUBMITTED AUTO_GRADED PENDING_REVIEW REVIEWED NEEDS
 enum ReviewVerdict   { APPROVED NEEDS_REVISION }
 enum StudySessionStatus { RUNNING PAUSED ENDED }
 enum WeeklyGoalKind { SESSIONS CHAPTERS }
+
+model Organization {
+  id        String               @id @default(cuid())
+  name      String
+  slug      String               @unique
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  members   OrganizationMember[]
+  courses   Course[]
+}
+
+model OrganizationMember {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           OrganizationRole
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
 
 model User {
   id            String   @id @default(cuid())
@@ -35,6 +62,8 @@ model User {
   celebratedStreakMilestones Int[] @default([])
   createdAt     DateTime @default(now())
   coursesOwned  Course[]     @relation("CourseMentor")
+  coursesCreated Course[]    @relation("CourseCreator")
+  organizationMemberships OrganizationMember[]
   enrollments   Enrollment[]
   responses     Response[]
   reviewsGiven  Review[]     @relation("Reviewer")
@@ -54,6 +83,12 @@ model Course {
   sequential    Boolean      @default(true)
   mentorId      String
   mentor        User         @relation("CourseMentor", fields: [mentorId], references: [id])
+  createdById   String
+  createdBy     User         @relation("CourseCreator", fields: [createdById], references: [id])
+  organizationId String?
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  listingStatus ListingStatus @default(DRAFT)
+  visibility    Visibility    @default(PRIVATE)
   modules       Module[]
   chapters      Chapter[]
   enrollments   Enrollment[]
@@ -61,7 +96,12 @@ model Course {
   publishedAt   DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+
   @@index([mentorId, status])
+  @@index([organizationId])
+  @@index([organizationId, listingStatus])
+  @@index([createdById])
+  @@index([listingStatus, visibility, status])
 }
 
 model Module {
@@ -301,6 +341,45 @@ model BlockStats {
   lastSubmittedAt DateTime?
 }
 ```
+
+## Status Responsibilities & Separation of Concerns
+
+Keep these four concepts strictly separate to avoid permission and visibility bugs:
+
+| Field | Responsibility | Values / Mechanism |
+| --- | --- | --- |
+| `listingStatus` | Moderation / review workflow | `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED` |
+| `visibility` | Discovery / directory visibility | `PRIVATE`, `UNLISTED`, `PUBLIC_DIRECTORY` |
+| `status` | Course content release | `DRAFT`, `PUBLISHED`, `ARCHIVED` |
+| `Enrollment` | Learning access | Unchanged: explicit row in `Enrollment` table |
+
+### Ownership & Review Routing
+* `organizationId = null`: Course belongs to the **solo/platform lane** and is reviewed by **Platform Admin** (`PLATFORM_ADMIN`).
+* `organizationId != null`: Course belongs to that **organization** and is reviewed/managed by that organization's **Org Admin** (`ORG_ADMIN`).
+* `createdById`: Identifies the author who created the course record.
+* `mentorId`: Identifies the mentor responsible for course teaching and response review.
+
+### Public Directory Requirements
+A course appears in the public catalog ONLY when:
+```text
+listingStatus = APPROVED
+AND
+visibility = PUBLIC_DIRECTORY
+AND
+Course.status = PUBLISHED
+```
+
+Organization courses default to `visibility = PRIVATE` (or `UNLISTED`) and do not enter the public directory automatically upon approval.
+
+### Existing Course Migration
+Existing courses receive safe migration defaults:
+```text
+organizationId = null
+listingStatus = DRAFT
+visibility = PRIVATE
+createdById = mentorId (backfilled)
+```
+Existing content publish state (`Course.status`) is preserved, but courses remain private until explicitly submitted and approved for the public directory.
 
 Auth.js v5 additionally requires its standard `Account`, `Session`, and `VerificationToken` models
 via `@auth/prisma-adapter` — add those in M0 alongside `User` (see

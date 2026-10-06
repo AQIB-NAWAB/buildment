@@ -4,7 +4,7 @@ export type HelpMessageView = {
   createdAt: string;
   authorId: string;
   authorName: string;
-  authorRole: "MENTOR" | "MENTEE" | "ADMIN";
+  authorRole: "MENTOR" | "MENTEE" | "PLATFORM_ADMIN";
 };
 
 export type HelpThreadView = {

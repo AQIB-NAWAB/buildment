@@ -10,9 +10,58 @@ status: draft v1
 Getting these words fixed prevents a lot of churn later. Use exactly these terms in code, docs,
 and conversation — don't introduce synonyms (e.g. "lesson" for "chapter", "task" for "block").
 
+## Organization
+A tenant or collective entity (e.g. `Dev Weekend`) that groups mentors, mentees, and organization-scoped courses.
+Has an `id`, `name`, `slug` (unique, e.g. `dev-weekend`), `createdAt`, and `updatedAt`.
+
+## OrganizationMember
+Represents membership **inside an organization**.
+Links a `User` (`userId`) to an `Organization` (`organizationId`) with an organization-scoped role:
+* `ORG_ADMIN`: Organization administrator with management and course moderation authority for that organization.
+* `MENTOR`: Organization mentor who authors and leads organization-scoped courses.
+* `MENTEE`: Organization learner enrolled in organization courses.
+
+`OrganizationMember` does NOT include platform-level roles.
+
+## Platform Admin vs. Organization Admin
+Platform Admins are platform-level users and are not organization members.
+
+* `User.role = PLATFORM_ADMIN`: Platform-wide administrative authority. Manages platform resources, solo mentor submissions, organizations, org admins, and public directory moderation.
+* `OrganizationMember.role = ORG_ADMIN`: Scoped solely to that specific organization. Manages members and reviews course submissions within that organization.
+
+A course with `organizationId = null` is a solo/platform course and is reviewed by Platform Admins.
+
+A course with `organizationId != null` belongs to that organization and is reviewed/managed by an Org Admin of that organization.
+
+`createdById` identifies the user who created the course. `mentorId` identifies the mentor responsible for the course. If these are always identical, the two fields should be consolidated.
+
+Course approval, publication, visibility, and enrollment are separate concerns:
+- `listingStatus` controls moderation (`DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`)
+- `visibility` controls discovery (`PRIVATE`, `UNLISTED`, `PUBLIC_DIRECTORY`)
+- `Course.status` controls publication (`DRAFT`, `PUBLISHED`, `ARCHIVED`)
+- `Enrollment` controls learning access
+
 ## Course
 The top-level container. Has a title, description, cover, difficulty, estimated hours, and a
-publish state. Owned by exactly one mentor (`Course.mentorId`).
+publish state.
+* `createdById`: The user who created the course record (creator attribution).
+* `mentorId`: The mentor responsible for teaching/evaluating the course.
+* `organizationId`: Nullable foreign key. `null` means solo/platform lane; set to an organization ID means owned by that organization.
+* `listingStatus`: Workflow moderation state (`DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`).
+* `visibility`: Discovery state (`PRIVATE`, `UNLISTED`, `PUBLIC_DIRECTORY`).
+* `status`: Content release state (`DRAFT`, `PUBLISHED`, `ARCHIVED`).
+
+### Public Directory Requirements
+A course appears in the public catalog ONLY when:
+```text
+listingStatus = APPROVED
+AND
+visibility = PUBLIC_DIRECTORY
+AND
+Course.status = PUBLISHED
+```
+
+Organization courses default to `visibility = PRIVATE` (or `UNLISTED`) and do not automatically appear in the public catalog upon approval.
 
 ## Module *(optional grouping)*
 An ordered section of a course (e.g. "Part 1: Foundations"). A course with no modules is fine —
@@ -39,6 +88,8 @@ heavier (code + long-form answer).
 The link between a mentee and a course. Created when a mentor assigns a course, or when a mentee
 joins via an invite link.
 
+Being `APPROVED`, `PUBLIC_DIRECTORY`, an organization member, or a course creator does NOT grant learning access — learning access strictly requires an `Enrollment`.
+
 ## Attempt / Response
 A mentee's answer to a block. Rows are immutable and append-only; the latest one is "current" per
 `(blockId, userId)`. This gives free history for reports and review threads — see
@@ -55,12 +106,15 @@ submissions without automated checks. See [`05-review-queue.mdx`](05-review-queu
 ## Entity relationships
 
 ```
-User ──< Course (as mentor)
+Organization ──< OrganizationMember >── User
+Organization ──< Course
+User (creator) ──< Course (createdById)
+User (mentor) ──< Course (mentorId)
 Course ──< Module ──< Chapter ──< Block
 Course ──< Enrollment >── User (as mentee)
 Enrollment ──< ChapterProgress
 Block ──< Response >── User
-Response ──< Review >── User (as mentor)
+Response ──< Review >── User (as reviewer)
 ```
 
 The full Prisma schema implementing this vocabulary is in [`08-data-model.mdx`](08-data-model.mdx).

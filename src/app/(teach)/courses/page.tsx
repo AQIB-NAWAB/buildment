@@ -6,7 +6,7 @@ import { CoursesEmptyState } from "@/components/teach/courses/courses-empty-stat
 import { CourseBrowser } from "@/components/teach/courses/course-browser";
 
 export default async function MentorCourseListPage() {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const view = await loadMentorCourses(user);
 
   return <div className="mx-auto max-w-7xl space-y-8">

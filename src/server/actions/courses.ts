@@ -22,8 +22,11 @@ const createCourseInput = z.object({
 export async function createCourse(input: {
   title: string;
   description?: string;
+  organizationId?: string | null;
+  mentorId?: string;
+  visibility?: "PRIVATE" | "UNLISTED" | "PUBLIC_DIRECTORY";
 }): Promise<CourseActionResult> {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const parsed = createCourseInput.safeParse(input);
   if (!parsed.success) {
     return { ok: false, errors: ["A title of at least 3 characters is required."] };
@@ -35,7 +38,11 @@ export async function createCourse(input: {
       slug,
       title: parsed.data.title,
       description: parsed.data.description || null,
-      mentorId: user.id,
+      mentorId: input.mentorId ?? user.id,
+      createdById: user.id,
+      organizationId: input.organizationId ?? null,
+      listingStatus: "DRAFT",
+      visibility: input.visibility ?? "PRIVATE",
       modules: {
         create: { title: "Part 1", order: 0 },
       },
@@ -59,13 +66,13 @@ async function uniqueCourseSlug(base: string): Promise<string> {
 export async function publishCourse(input: {
   courseId: string;
 }): Promise<CourseActionResult> {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const course = await prisma.course.findUnique({
     where: { id: input.courseId },
     select: { id: true, slug: true, mentorId: true, status: true },
   });
   if (!course) return { ok: false, errors: ["Course not found."] };
-  if (user.role !== "ADMIN" && course.mentorId !== user.id) {
+  if (user.role !== "PLATFORM_ADMIN" && course.mentorId !== user.id) {
     return { ok: false, errors: ["You don't own this course."] };
   }
   if (course.status === "PUBLISHED") return { ok: true, courseSlug: course.slug };
@@ -82,7 +89,7 @@ export async function unpublishCourse(input: {
   /** Required when mentees are enrolled — the UI collects this confirmation. */
   confirmedWithEnrollments?: boolean;
 }): Promise<CourseActionResult> {
-  const user = await requireRole("MENTOR", "ADMIN");
+  const user = await requireRole("MENTOR", "PLATFORM_ADMIN");
   const course = await prisma.course.findUnique({
     where: { id: input.courseId },
     select: {
@@ -94,7 +101,7 @@ export async function unpublishCourse(input: {
     },
   });
   if (!course) return { ok: false, errors: ["Course not found."] };
-  if (user.role !== "ADMIN" && course.mentorId !== user.id) {
+  if (user.role !== "PLATFORM_ADMIN" && course.mentorId !== user.id) {
     return { ok: false, errors: ["You don't own this course."] };
   }
   if (course.status === "DRAFT") return { ok: true, courseSlug: course.slug };
